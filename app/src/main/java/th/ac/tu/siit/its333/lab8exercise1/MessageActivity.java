@@ -71,6 +71,13 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
 
     @Override
     public void run() {
+        Toast t = Toast.makeText(this.getApplicationContext(),
+                "Called by handler", Toast.LENGTH_SHORT);
+        t.show();
+        handler.postDelayed(this, 30000); //execute again after another 10 seconds
+        LoadMessageTask task = new LoadMessageTask();
+        task.execute();
+
     }
 
     @Override
@@ -86,6 +93,7 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
             PostMessageTask p = new PostMessageTask();
             p.execute(user, message);
         }
+        etMessage.setText("");
     }
 
 
@@ -97,7 +105,7 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
+    public boolean onOptionsItemSelected(MenuItem item) { // the 3dots button on the up-right corner
         // Handle action bar item clicks here. The action bar will
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
@@ -105,6 +113,11 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
 
         //noinspection SimplifiableIfStatement
         if (id == R.id.action_refresh) {
+            LoadMessageTask task = new LoadMessageTask();
+            task.execute();
+            handler.removeCallbacks(this);
+            handler.postDelayed(this, 30000);
+
 
             return true;
         }
@@ -113,7 +126,7 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
     }
 
     class LoadMessageTask extends AsyncTask<String, Void, Boolean> {
-
+        //use to load the message
         @Override
         protected Boolean doInBackground(String... params) {
             BufferedReader reader;
@@ -124,6 +137,8 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
                 Log.e("LoadMessageTask", ""+ timestamp);
                 URL u = new URL("http://ict.siit.tu.ac.th/~cholwich/microblog/fetch.php?time="
                         + timestamp);
+                //when you load the data, you download the msg after the timestamp you are provided
+                // append new data with old data instead of reloading the whole db
                 HttpURLConnection h = (HttpURLConnection)u.openConnection();
                 h.setRequestMethod("GET");
                 h.setDoInput(true);
@@ -145,7 +160,18 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
                     //item.put("message", m);
                     //data.add(0, item);
                     JSONObject json = new JSONObject(buffer.toString());
+                    timestamp = json.getInt("timestamp");
+                    for(int i=0;i<json.getJSONArray("msg").length();i++)
+                    {
+                        String us = json.getJSONArray("msg").getJSONObject(i).getString("user");
+                        String m = json.getJSONArray("msg").getJSONObject(i).getString("message");
+                        Map<String, String> item = new HashMap<String, String>();
+                        item.put("user", us);
+                        item.put("message", m);
+                        data.add(0, item);
 
+                    }
+                    return true;
                 }
             } catch (MalformedURLException e) {
                 Log.e("LoadMessageTask", "Invalid URL");
@@ -159,7 +185,9 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
 
         @Override
         protected void onPostExecute(Boolean result) {
+
             if (result) {
+
                 adapter.notifyDataSetChanged();
                 lastUpdate = System.currentTimeMillis();
                 Toast t = Toast.makeText(MessageActivity.this.getApplicationContext(),
@@ -179,8 +207,38 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
             String user = params[0];
             String message = params[1];
             HttpClient h = new DefaultHttpClient();
+
+            //post protocol to post the data to the providing URL
             HttpPost p = new HttpPost("http://ict.siit.tu.ac.th/~cholwich/microblog/post.php");
 
+            List<NameValuePair> values = new ArrayList<NameValuePair>();
+            values.add(new BasicNameValuePair("user", user));
+            values.add(new BasicNameValuePair("message", message));
+            try {
+                p.setEntity(new UrlEncodedFormEntity(values));
+                HttpResponse response = h.execute(p);
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(response.getEntity().getContent()));
+                while((line = reader.readLine()) != null) {
+                    buffer.append(line);
+                }
+
+
+                Log.e("LoadMessageTask+cccccc", buffer.toString());
+                JSONObject json = new JSONObject(buffer.toString());
+                boolean res = json.getBoolean("response");
+                if (res == true) {
+                    return true;
+                }
+            } catch (UnsupportedEncodingException e) {
+                Log.e("Error", "Invalid encoding");
+            } catch (ClientProtocolException e) {
+                Log.e("Error", "Error in posting a message");
+            } catch (IOException e) {
+                Log.e("Error", "I/O Exception");
+            } catch (JSONException e) {
+                Log.e("LoadMessageTask", "Invalid JSON");
+            }
 
 
             return false;
@@ -193,6 +251,8 @@ public class MessageActivity extends ActionBarActivity implements Runnable {
                         "Successfully post your status",
                         Toast.LENGTH_SHORT);
                 t.show();
+                LoadMessageTask task = new LoadMessageTask();
+                task.execute();
             }
             else {
                 Toast t = Toast.makeText(MessageActivity.this.getApplicationContext(),
